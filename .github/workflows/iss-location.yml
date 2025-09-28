@@ -1,10 +1,10 @@
 name: Log ISS Location Data Daily
 
+# Trigger daily at 12:00 UTC + manual trigger
 on:
   schedule:
-    # Runs at 12:00 UTC every day
     - cron: "0 12 * * *"
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
   collect-iss-data:
@@ -13,39 +13,51 @@ jobs:
       contents: write
 
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2️⃣ Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.x"
+          python-version: '3.x'
 
-      - name: Cache Python dependencies
+      # 3️⃣ Prime cache for pip dependencies
+      - name: prime-cache-f85aaf1
         uses: actions/cache@v4
-        id: prime-cache-f85aaf1
         with:
           path: ~/.cache/pip
           key: cache-f85aaf1
           restore-keys: cache-f85aaf1
 
+      # 4️⃣ Install dependencies
       - name: Install requests
         run: pip install requests
 
+      # 5️⃣ Fetch ISS data safely
       - name: Fetch ISS location data
         run: |
-          python << 'EOF'
+          python - << 'EOF'
           import requests
 
-          data = requests.get('http://api.open-notify.org/iss-now.json').text
-          with open('iss-location.jsonl', 'a') as f:
-              f.write(data + '\n')
+          try:
+              data = requests.get('http://api.open-notify.org/iss-now.json', timeout=10).text
+              with open('iss-location.jsonl', 'a') as f:
+                  f.write(data + '\n')
+          except Exception as e:
+              print(f"Error fetching ISS data: {e}")
           EOF
 
+      # 6️⃣ Commit and push only if file changed
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add iss-location.jsonl
-          git commit -m "Update ISS position data [skip ci]" || exit 0
-          git push
+          if ! git diff --cached --quiet; then
+              git commit -m "Update ISS position data [skip ci]"
+              git push
+          else
+              echo "No changes to commit"
+          fi
